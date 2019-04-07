@@ -4,25 +4,23 @@
 Tests parsers ability to read and parse non-local files
 and hence require a network connection to be read.
 """
+from io import BytesIO, StringIO
 import logging
 
-import pytest
 import numpy as np
+import pytest
 
-import pandas.util.testing as tm
 import pandas.util._test_decorators as td
+
 from pandas import DataFrame
+import pandas.util.testing as tm
+
 from pandas.io.parsers import read_csv
-from pandas.compat import BytesIO, StringIO
 
 
 @pytest.mark.network
-@pytest.mark.parametrize(
-    "compress_type, extension", [
-        ('gzip', '.gz'), ('bz2', '.bz2'), ('zip', '.zip'),
-        pytest.param('xz', '.xz', marks=td.skip_if_no_lzma)
-    ]
-)
+@pytest.mark.parametrize("compress_type, extension", [
+    ('gzip', '.gz'), ('bz2', '.bz2'), ('zip', '.zip'), ('xz', '.xz')])
 @pytest.mark.parametrize('mode', ['explicit', 'infer'])
 @pytest.mark.parametrize('engine', ['python', 'c'])
 def test_compressed_urls(salaries_table, compress_type, extension, mode,

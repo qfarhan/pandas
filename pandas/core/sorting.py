@@ -1,18 +1,18 @@
 """ miscellaneous sorting / groupby utilities """
+import warnings
 
 import numpy as np
-from pandas.compat import long, string_types, PY3
-from pandas.core.dtypes.common import (
-    ensure_platform_int,
-    ensure_int64,
-    is_list_like,
-    is_categorical_dtype)
-from pandas.core.dtypes.cast import infer_dtype_from_array
-from pandas.core.dtypes.missing import isna
-import pandas.core.algorithms as algorithms
-from pandas._libs import lib, algos, hashtable
-from pandas._libs.hashtable import unique_label_indices
 
+from pandas._libs import algos, hashtable, lib
+from pandas._libs.hashtable import unique_label_indices
+from pandas.compat import PY3
+
+from pandas.core.dtypes.cast import infer_dtype_from_array
+from pandas.core.dtypes.common import (
+    ensure_int64, ensure_platform_int, is_categorical_dtype, is_list_like)
+from pandas.core.dtypes.missing import isna
+
+import pandas.core.algorithms as algorithms
 
 _INT64_MAX = np.iinfo(np.int64).max
 
@@ -45,9 +45,9 @@ def get_group_index(labels, shape, sort, xnull):
     labels are equal at all location.
     """
     def _int64_cut_off(shape):
-        acc = long(1)
+        acc = 1
         for i, mul in enumerate(shape):
-            acc *= long(mul)
+            acc *= int(mul)
             if not acc < _INT64_MAX:
                 return i
         return len(shape)
@@ -122,9 +122,9 @@ def get_compressed_ids(labels, sizes):
 
 
 def is_int64_overflow_possible(shape):
-    the_prod = long(1)
+    the_prod = 1
     for x in shape:
-        the_prod *= long(x)
+        the_prod *= int(x)
 
     return the_prod >= _INT64_MAX
 
@@ -241,9 +241,27 @@ def nargsort(items, kind='quicksort', ascending=True, na_position='last'):
 
     # specially handle Categorical
     if is_categorical_dtype(items):
-        return items.argsort(ascending=ascending, kind=kind)
+        if na_position not in {'first', 'last'}:
+            raise ValueError('invalid na_position: {!r}'.format(na_position))
 
-    items = np.asanyarray(items)
+        mask = isna(items)
+        cnt_null = mask.sum()
+        sorted_idx = items.argsort(ascending=ascending, kind=kind)
+        if ascending and na_position == 'last':
+            # NaN is coded as -1 and is listed in front after sorting
+            sorted_idx = np.roll(sorted_idx, -cnt_null)
+        elif not ascending and na_position == 'first':
+            # NaN is coded as -1 and is listed in the end after sorting
+            sorted_idx = np.roll(sorted_idx, cnt_null)
+        return sorted_idx
+
+    with warnings.catch_warnings():
+        # https://github.com/pandas-dev/pandas/issues/25439
+        # can be removed once ExtensionArrays are properly handled by nargsort
+        warnings.filterwarnings(
+            "ignore", category=FutureWarning,
+            message="Converting timezone-aware DatetimeArray to")
+        items = np.asanyarray(items)
     idx = np.arange(len(items))
     mask = isna(items)
     non_nans = items[~mask]
@@ -436,14 +454,14 @@ def safe_sort(values, labels=None, na_sentinel=-1, assume_unique=False):
 
     def sort_mixed(values):
         # order ints before strings, safe in py3
-        str_pos = np.array([isinstance(x, string_types) for x in values],
+        str_pos = np.array([isinstance(x, str) for x in values],
                            dtype=bool)
         nums = np.sort(values[~str_pos])
         strs = np.sort(values[str_pos])
         return np.concatenate([nums, np.asarray(strs, dtype=object)])
 
     sorter = None
-    if PY3 and lib.infer_dtype(values) == 'mixed-integer':
+    if PY3 and lib.infer_dtype(values, skipna=False) == 'mixed-integer':
         # unorderable in py3 if mixed str/int
         ordered = sort_mixed(values)
     else:

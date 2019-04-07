@@ -4,14 +4,11 @@ Engine classes for :func:`~pandas.eval`
 
 import abc
 
-from pandas import compat
-from pandas.compat import map
-import pandas.io.formats.printing as printing
 from pandas.core.computation.align import _align, _reconstruct_object
 from pandas.core.computation.ops import (
-    UndefinedVariableError,
-    _mathops, _reductions)
+    UndefinedVariableError, _mathops, _reductions)
 
+import pandas.io.formats.printing as printing
 
 _ne_builtins = frozenset(_mathops + _reductions)
 
@@ -126,7 +123,7 @@ class NumExprEngine(AbstractEngine):
             try:
                 msg = e.message
             except AttributeError:
-                msg = compat.text_type(e)
+                msg = str(e)
             raise UndefinedVariableError(msg)
 
 

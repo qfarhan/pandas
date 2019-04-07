@@ -1,6 +1,6 @@
 import pytest
 
-from pandas.io.formats.console import detect_console_encoding
+from pandas._config import detect_console_encoding
 
 
 class MockEncoding(object):  # TODO(py27): replace with mock

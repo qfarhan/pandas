@@ -6,42 +6,33 @@ operations, primarily in cython. These classes (BaseGrouper and BinGrouper)
 are contained *in* the SeriesGroupBy and DataFrameGroupBy objects.
 """
 
-import copy
 import collections
+
 import numpy as np
 
-from pandas._libs import lib, reduction, NaT, iNaT, groupby as libgroupby
+from pandas._libs import NaT, groupby as libgroupby, iNaT, lib, reduction
+from pandas.compat import lzip
+from pandas.errors import AbstractMethodError
 from pandas.util._decorators import cache_readonly
 
-from pandas.compat import zip, range, lzip
-
-from pandas.core.base import SelectionMixin
-from pandas.core.dtypes.missing import isna, _maybe_fill
-from pandas.core.index import (
-    Index, MultiIndex, ensure_index)
 from pandas.core.dtypes.common import (
-    ensure_float64,
-    ensure_platform_int,
-    ensure_int64,
-    ensure_int64_or_float64,
-    ensure_object,
-    needs_i8_conversion,
-    is_integer_dtype,
-    is_complex_dtype,
-    is_bool_dtype,
-    is_numeric_dtype,
-    is_timedelta64_dtype,
-    is_datetime64_any_dtype,
-    is_categorical_dtype)
-from pandas.core.series import Series
+    ensure_float64, ensure_int64, ensure_int64_or_float64, ensure_object,
+    ensure_platform_int, is_bool_dtype, is_categorical_dtype, is_complex_dtype,
+    is_datetime64_any_dtype, is_integer_dtype, is_numeric_dtype,
+    is_timedelta64_dtype, needs_i8_conversion)
+from pandas.core.dtypes.missing import _maybe_fill, isna
+
+import pandas.core.algorithms as algorithms
+from pandas.core.base import SelectionMixin
+import pandas.core.common as com
 from pandas.core.frame import DataFrame
 from pandas.core.generic import NDFrame
-import pandas.core.common as com
 from pandas.core.groupby import base
-from pandas.core.sorting import (get_group_index_sorter, get_group_index,
-                                 compress_group_index, get_flattened_iterator,
-                                 decons_obs_group_ids, get_indexer_dict)
-import pandas.core.algorithms as algorithms
+from pandas.core.index import Index, MultiIndex, ensure_index
+from pandas.core.series import Series
+from pandas.core.sorting import (
+    compress_group_index, decons_obs_group_ids, get_flattened_iterator,
+    get_group_index, get_group_index_sorter, get_indexer_dict)
 
 
 def generate_bins_generic(values, binner, closed):
@@ -174,25 +165,44 @@ class BaseGrouper(object):
         mutated = self.mutated
         splitter = self._get_splitter(data, axis=axis)
         group_keys = self._get_group_keys()
+        result_values = None
 
         # oh boy
         f_name = com.get_callable_name(f)
         if (f_name not in base.plotting_methods and
                 hasattr(splitter, 'fast_apply') and axis == 0):
             try:
-                values, mutated = splitter.fast_apply(f, group_keys)
-                return group_keys, values, mutated
+                result_values, mutated = splitter.fast_apply(f, group_keys)
+
+                # If the fast apply path could be used we can return here.
+                # Otherwise we need to fall back to the slow implementation.
+                if len(result_values) == len(group_keys):
+                    return group_keys, result_values, mutated
+
             except reduction.InvalidApply:
-                # we detect a mutation of some kind
-                # so take slow path
+                # Cannot fast apply on MultiIndex (_has_complex_internals).
+                # This Exception is also raised if `f` triggers an exception
+                # but it is preferable to raise the exception in Python.
                 pass
             except Exception:
                 # raise this error to the caller
                 pass
 
-        result_values = []
         for key, (i, group) in zip(group_keys, splitter):
             object.__setattr__(group, 'name', key)
+
+            # result_values is None if fast apply path wasn't taken
+            # or fast apply aborted with an unexpected exception.
+            # In either case, initialize the result list and perform
+            # the slow iteration.
+            if result_values is None:
+                result_values = []
+
+            # If result_values is not None we're in the case that the
+            # fast apply loop was broken prematurely but we have
+            # already the result for the first group which we can reuse.
+            elif i == 0:
+                continue
 
             # group might be modified
             group_axes = _get_axes(group)
@@ -299,10 +309,10 @@ class BaseGrouper(object):
         if not self.compressed and len(self.groupings) == 1:
             return self.groupings[0].result_index.rename(self.names[0])
 
-        labels = self.recons_labels
+        codes = self.recons_labels
         levels = [ping.result_index for ping in self.groupings]
         result = MultiIndex(levels=levels,
-                            labels=labels,
+                            codes=codes,
                             verify_integrity=False,
                             names=self.names)
         return result
@@ -388,7 +398,8 @@ class BaseGrouper(object):
 
             # otherwise find dtype-specific version, falling back to object
             for dt in [dtype_str, 'object']:
-                f = getattr(libgroupby, "%s_%s" % (fname, dtype_str), None)
+                f = getattr(libgroupby, "{fname}_{dtype_str}".format(
+                    fname=fname, dtype_str=dt), None)
                 if f is not None:
                     return f
 
@@ -411,9 +422,11 @@ class BaseGrouper(object):
             func = get_func(ftype)
 
         if func is None:
-            raise NotImplementedError("function is not implemented for this"
-                                      "dtype: [how->%s,dtype->%s]" %
-                                      (how, dtype_str))
+            raise NotImplementedError(
+                "function is not implemented for this dtype: "
+                "[how->{how},dtype->{dtype_str}]".format(how=how,
+                                                         dtype_str=dtype_str))
+
         return func
 
     def _cython_operation(self, kind, values, how, axis, min_count=-1,
@@ -493,7 +506,8 @@ class BaseGrouper(object):
             out_dtype = 'float'
         else:
             if is_numeric:
-                out_dtype = '%s%d' % (values.dtype.kind, values.dtype.itemsize)
+                out_dtype = '{kind}{itemsize}'.format(
+                    kind=values.dtype.kind, itemsize=values.dtype.itemsize)
             else:
                 out_dtype = 'object'
 
@@ -521,8 +535,8 @@ class BaseGrouper(object):
                 result = result.astype('float64')
                 result[mask] = np.nan
 
-        if kind == 'aggregate' and \
-           self._filter_empty_groups and not counts.all():
+        if (kind == 'aggregate' and
+                self._filter_empty_groups and not counts.all()):
             if result.ndim == 2:
                 try:
                     result = lib.row_bool_subset(
@@ -683,10 +697,8 @@ class BinGrouper(BaseGrouper):
 
         # this is mainly for compat
         # GH 3881
-        result = {}
-        for key, value in zip(self.binlabels, self.bins):
-            if key is not NaT:
-                result[key] = value
+        result = {key: value for key, value in zip(self.binlabels, self.bins)
+                  if key is not NaT}
         return result
 
     @property
@@ -743,12 +755,9 @@ class BinGrouper(BaseGrouper):
         else:
             comp_ids = np.repeat(np.r_[-1, np.arange(ngroups)], rep)
 
-        return comp_ids.astype('int64', copy=False), \
-            obs_group_ids.astype('int64', copy=False), ngroups
-
-    @cache_readonly
-    def ngroups(self):
-        return len(self.result_index)
+        return (comp_ids.astype('int64', copy=False),
+                obs_group_ids.astype('int64', copy=False),
+                ngroups)
 
     @cache_readonly
     def result_index(self):
@@ -775,11 +784,6 @@ class BinGrouper(BaseGrouper):
         dummy = obj[:0]
         grouper = reduction.SeriesBinGrouper(obj, func, self.bins, dummy)
         return grouper.get_result()
-
-    # ----------------------------------------------------------------------
-    # cython aggregation
-
-    _cython_functions = copy.deepcopy(BaseGrouper._cython_functions)
 
 
 def _get_axes(group):
@@ -849,7 +853,7 @@ class DataSplitter(object):
         return sdata.iloc[slice_obj]
 
     def apply(self, f):
-        raise com.AbstractMethodError(self)
+        raise AbstractMethodError(self)
 
 
 class SeriesSplitter(DataSplitter):
@@ -860,9 +864,6 @@ class SeriesSplitter(DataSplitter):
 
 class FrameSplitter(DataSplitter):
 
-    def __init__(self, data, labels, ngroups, axis=0):
-        super(FrameSplitter, self).__init__(data, labels, ngroups, axis=axis)
-
     def fast_apply(self, f, names):
         # must return keys::list, values::list, mutated::bool
         try:
@@ -872,10 +873,7 @@ class FrameSplitter(DataSplitter):
             return [], True
 
         sdata = self._get_sorted_data()
-        results, mutated = reduction.apply_frame_axis0(sdata, f, names,
-                                                       starts, ends)
-
-        return results, mutated
+        return reduction.apply_frame_axis0(sdata, f, names, starts, ends)
 
     def _chop(self, sdata, slice_obj):
         if self.axis == 0:

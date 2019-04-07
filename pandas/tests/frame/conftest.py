@@ -1,10 +1,8 @@
+import numpy as np
 import pytest
 
-import numpy as np
-
-from pandas import compat
+from pandas import DataFrame, NaT, compat, date_range
 import pandas.util.testing as tm
-from pandas import DataFrame, date_range, NaT
 
 
 @pytest.fixture
@@ -18,13 +16,32 @@ def float_frame():
 
 
 @pytest.fixture
-def float_frame2():
+def float_frame_with_na():
     """
     Fixture for DataFrame of floats with index of unique strings
 
-    Columns are ['D', 'C', 'B', 'A']
+    Columns are ['A', 'B', 'C', 'D']; some entries are missing
     """
-    return DataFrame(tm.getSeriesData(), columns=['D', 'C', 'B', 'A'])
+    df = DataFrame(tm.getSeriesData())
+    # set some NAs
+    df.loc[5:10] = np.nan
+    df.loc[15:20, -2:] = np.nan
+    return df
+
+
+@pytest.fixture
+def bool_frame_with_na():
+    """
+    Fixture for DataFrame of booleans with index of unique strings
+
+    Columns are ['A', 'B', 'C', 'D']; some entries are missing
+    """
+    df = DataFrame(tm.getSeriesData()) > 0
+    df = df.astype(object)
+    # set some NAs
+    df.loc[5:10] = np.nan
+    df.loc[15:20, -2:] = np.nan
+    return df
 
 
 @pytest.fixture
@@ -78,21 +95,6 @@ def mixed_float_frame():
 
 
 @pytest.fixture
-def mixed_float_frame2():
-    """
-    Fixture for DataFrame of different float types with index of unique strings
-
-    Columns are ['A', 'B', 'C', 'D'].
-    """
-    df = DataFrame(tm.getSeriesData())
-    df.D = df.D.astype('float32')
-    df.C = df.C.astype('float32')
-    df.B = df.B.astype('float16')
-    df.D = df.D.astype('float64')
-    return df
-
-
-@pytest.fixture
 def mixed_int_frame():
     """
     Fixture for DataFrame of different int types with index of unique strings
@@ -106,19 +108,6 @@ def mixed_int_frame():
     df.C = df.C.astype('uint8')
     df.D = df.C.astype('int64')
     return df
-
-
-@pytest.fixture
-def mixed_type_frame():
-    """
-    Fixture for DataFrame of float/int/string columns with RangeIndex
-
-    Columns are ['a', 'b', 'c', 'float32', 'int32'].
-    """
-    return DataFrame({'a': 1., 'b': 2, 'c': 'foo',
-                      'float32': np.array([1.] * 10, dtype='float32'),
-                      'int32': np.array([1] * 10, dtype='int32')},
-                     index=np.arange(10))
 
 
 @pytest.fixture
@@ -136,30 +125,6 @@ def timezone_frame():
     df.iloc[1, 1] = NaT
     df.iloc[1, 2] = NaT
     return df
-
-
-@pytest.fixture
-def empty_frame():
-    """
-    Fixture for empty DataFrame
-    """
-    return DataFrame({})
-
-
-@pytest.fixture
-def datetime_series():
-    """
-    Fixture for Series of floats with DatetimeIndex
-    """
-    return tm.makeTimeSeries(nper=30)
-
-
-@pytest.fixture
-def datetime_series_short():
-    """
-    Fixture for Series of floats with DatetimeIndex
-    """
-    return tm.makeTimeSeries(nper=30)[5:]
 
 
 @pytest.fixture
@@ -182,12 +147,13 @@ def frame_of_index_cols():
     """
     Fixture for DataFrame of columns that can be used for indexing
 
-    Columns are ['A', 'B', 'C', 'D', 'E']; 'A' & 'B' contain duplicates (but
-    are jointly unique), the rest are unique.
+    Columns are ['A', 'B', 'C', 'D', 'E', ('tuple', 'as', 'label')];
+    'A' & 'B' contain duplicates (but are jointly unique), the rest are unique.
     """
     df = DataFrame({'A': ['foo', 'foo', 'foo', 'bar', 'bar'],
                     'B': ['one', 'two', 'three', 'one', 'two'],
                     'C': ['a', 'b', 'c', 'd', 'e'],
                     'D': np.random.randn(5),
-                    'E': np.random.randn(5)})
+                    'E': np.random.randn(5),
+                    ('tuple', 'as', 'label'): np.random.randn(5)})
     return df

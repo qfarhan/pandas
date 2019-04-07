@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
 
-from __future__ import print_function
-
+import numpy as np
 import pytest
 
-import numpy as np
+from pandas.compat import lrange
 
-from pandas.compat import lrange, string_types
 from pandas import DataFrame, Series
-
 import pandas.util.testing as tm
 
 
@@ -55,8 +52,7 @@ def test_duplicated_keep(keep, expected):
     tm.assert_series_equal(result, expected)
 
 
-@pytest.mark.xfail(reason="GH#21720; nan/None falsely considered equal",
-                   strict=True)
+@pytest.mark.xfail(reason="GH#21720; nan/None falsely considered equal")
 @pytest.mark.parametrize('keep, expected', [
     ('first', Series([False, False, True, False, True])),
     ('last', Series([True, True, False, False, False])),
@@ -78,7 +74,7 @@ def test_duplicated_subset(subset, keep):
 
     if subset is None:
         subset = list(df.columns)
-    elif isinstance(subset, string_types):
+    elif isinstance(subset, str):
         # need to have a DataFrame, not a Series
         # -> select columns with singleton list, not string
         subset = [subset]
@@ -182,6 +178,17 @@ def test_drop_duplicates():
 
     for keep in ['first', 'last', False]:
         assert df.duplicated(keep=keep).sum() == 0
+
+
+def test_duplicated_on_empty_frame():
+    # GH 25184
+
+    df = DataFrame(columns=['a', 'b'])
+    dupes = df.duplicated('a')
+
+    result = df[dupes]
+    expected = df.copy()
+    tm.assert_frame_equal(result, expected)
 
 
 def test_drop_duplicates_with_duplicate_column_names():

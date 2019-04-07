@@ -7,21 +7,18 @@ from datetime import datetime
 import pytest
 
 import pandas as pd
-from pandas import Timestamp
-from pandas import compat
+from pandas import Timestamp, compat
 
-from pandas.tseries.offsets import (BMonthBegin, BMonthEnd,
-                                    MonthBegin, MonthEnd,
-                                    YearEnd, YearBegin, BYearEnd, BYearBegin,
-                                    QuarterEnd, QuarterBegin,
-                                    BQuarterEnd, BQuarterBegin)
+from pandas.tseries.offsets import (
+    BMonthBegin, BMonthEnd, BQuarterBegin, BQuarterEnd, BYearBegin, BYearEnd,
+    MonthBegin, MonthEnd, QuarterBegin, QuarterEnd, YearBegin, YearEnd)
 
-from .test_offsets import Base
 from .common import assert_offset_equal, assert_onOffset
-
+from .test_offsets import Base
 
 # --------------------------------------------------------------------
 # Misc
+
 
 def test_quarterly_dont_normalize():
     date = datetime(2012, 3, 31, 5, 30)
@@ -716,7 +713,8 @@ class TestYearBegin(Base):
     _offset = YearBegin
 
     def test_misspecified(self):
-        pytest.raises(ValueError, YearBegin, month=13)
+        with pytest.raises(ValueError, match="Month must go from 1 to 12"):
+            YearBegin(month=13)
 
     offset_cases = []
     offset_cases.append((YearBegin(), {
@@ -807,7 +805,8 @@ class TestYearEnd(Base):
     _offset = YearEnd
 
     def test_misspecified(self):
-        pytest.raises(ValueError, YearEnd, month=13)
+        with pytest.raises(ValueError, match="Month must go from 1 to 12"):
+            YearEnd(month=13)
 
     offset_cases = []
     offset_cases.append((YearEnd(), {
@@ -903,8 +902,11 @@ class TestBYearBegin(Base):
     _offset = BYearBegin
 
     def test_misspecified(self):
-        pytest.raises(ValueError, BYearBegin, month=13)
-        pytest.raises(ValueError, BYearEnd, month=13)
+        msg = "Month must go from 1 to 12"
+        with pytest.raises(ValueError, match=msg):
+            BYearBegin(month=13)
+        with pytest.raises(ValueError, match=msg):
+            BYearEnd(month=13)
 
     offset_cases = []
     offset_cases.append((BYearBegin(), {
@@ -996,8 +998,11 @@ class TestBYearEndLagged(Base):
     _offset = BYearEnd
 
     def test_bad_month_fail(self):
-        pytest.raises(Exception, BYearEnd, month=13)
-        pytest.raises(Exception, BYearEnd, month=0)
+        msg = "Month must go from 1 to 12"
+        with pytest.raises(ValueError, match=msg):
+            BYearEnd(month=13)
+        with pytest.raises(ValueError, match=msg):
+            BYearEnd(month=0)
 
     offset_cases = []
     offset_cases.append((BYearEnd(month=6), {

@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
-import re
 from datetime import datetime
+import re
 
 import numpy as np
 import pytest
-from pandas.compat import long
+
+from pandas._libs.tslib import iNaT
+
 import pandas.core.algorithms as algos
 import pandas.util.testing as tm
-from pandas._libs.tslib import iNaT
 
 
 @pytest.fixture(params=[True, False])
@@ -90,7 +91,7 @@ class TestTake(object):
             expected[3] = np.nan
             tm.assert_almost_equal(out, expected)
         else:
-            with tm.assert_raises_regex(TypeError, self.fill_error):
+            with pytest.raises(TypeError, match=self.fill_error):
                 algos.take_1d(data, indexer, out=out)
 
             # No Exception otherwise.
@@ -146,8 +147,7 @@ class TestTake(object):
             tm.assert_almost_equal(out1, expected1)
         else:
             for i, out in enumerate([out0, out1]):
-                with tm.assert_raises_regex(TypeError,
-                                            self.fill_error):
+                with pytest.raises(TypeError, match=self.fill_error):
                     algos.take_nd(data, indexer, out=out, axis=i)
 
                 # No Exception otherwise.
@@ -226,8 +226,7 @@ class TestTake(object):
             tm.assert_almost_equal(out2, expected2)
         else:
             for i, out in enumerate([out0, out1, out2]):
-                with tm.assert_raises_regex(TypeError,
-                                            self.fill_error):
+                with pytest.raises(TypeError, match=self.fill_error):
                     algos.take_nd(data, indexer, out=out, axis=i)
 
                 # No Exception otherwise.
@@ -353,8 +352,7 @@ class TestTake(object):
 
     def test_2d_datetime64(self):
         # 2005/01/01 - 2006/01/01
-        arr = np.random.randint(
-            long(11045376), long(11360736), (5, 3)) * 100000000000
+        arr = np.random.randint(11045376, 11360736, (5, 3)) * 100000000000
         arr = arr.view(dtype='datetime64[ns]')
         indexer = [0, 2, -1, 1, -1]
 

@@ -1,9 +1,10 @@
 import numpy as np
 
-from pandas import compat
 from pandas.util._decorators import cache_readonly
-import pandas.util.testing as tm
+
 import pandas as pd
+from pandas import compat
+import pandas.util.testing as tm
 
 _seriesd = tm.getSeriesData()
 _tsd = tm.getTimeSeriesData()
@@ -84,7 +85,7 @@ class TestData(object):
 
     @cache_readonly
     def empty(self):
-        return pd.DataFrame({})
+        return pd.DataFrame()
 
     @cache_readonly
     def ts1(self):
@@ -110,7 +111,7 @@ class TestData(object):
 def _check_mixed_float(df, dtype=None):
     # float16 are most likely to be upcasted to float32
     dtypes = dict(A='float32', B='float32', C='float16', D='float64')
-    if isinstance(dtype, compat.string_types):
+    if isinstance(dtype, str):
         dtypes = {k: dtype for k, v in dtypes.items()}
     elif isinstance(dtype, dict):
         dtypes.update(dtype)
@@ -126,7 +127,7 @@ def _check_mixed_float(df, dtype=None):
 
 def _check_mixed_int(df, dtype=None):
     dtypes = dict(A='int32', B='uint64', C='uint8', D='int64')
-    if isinstance(dtype, compat.string_types):
+    if isinstance(dtype, str):
         dtypes = {k: dtype for k, v in dtypes.items()}
     elif isinstance(dtype, dict):
         dtypes.update(dtype)

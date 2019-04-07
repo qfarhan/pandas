@@ -1,6 +1,6 @@
 import subprocess
+
 from .exceptions import PyperclipException
-from pandas.compat import PY2, text_type
 
 EXCEPT_MSG = """
     Pyperclip could not find a copy/paste mechanism for your system.
@@ -64,7 +64,7 @@ def init_qt_clipboard():
 
     def paste_qt():
         cb = app.clipboard()
-        return text_type(cb.text())
+        return str(cb.text())
 
     return copy_qt, paste_qt
 
@@ -133,11 +133,7 @@ def init_no_clipboard():
         def __call__(self, *args, **kwargs):
             raise PyperclipException(EXCEPT_MSG)
 
-        if PY2:
-            def __nonzero__(self):
-                return False
-        else:
-            def __bool__(self):
-                return False
+        def __bool__(self):
+            return False
 
     return ClipboardUnavailable(), ClipboardUnavailable()

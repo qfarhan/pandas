@@ -3,18 +3,16 @@
 
 from datetime import datetime, timedelta
 
-import sys
-
 import numpy as np
+
+from pandas.compat import lrange
+
 import pandas as pd
-
-from pandas import (Index, Series, DataFrame, date_range, option_context,
-                    Categorical, period_range, timedelta_range)
-from pandas.core.index import MultiIndex
+from pandas import (
+    Categorical, DataFrame, Index, Series, date_range, option_context,
+    period_range, timedelta_range)
 from pandas.core.base import StringMixin
-
-from pandas.compat import lrange, range, u
-from pandas import compat
+from pandas.core.index import MultiIndex
 import pandas.util.testing as tm
 
 from .common import TestData
@@ -25,8 +23,8 @@ class TestSeriesRepr(TestData):
     def test_multilevel_name_print(self):
         index = MultiIndex(levels=[['foo', 'bar', 'baz', 'qux'], ['one', 'two',
                                                                   'three']],
-                           labels=[[0, 0, 0, 1, 1, 2, 2, 3, 3, 3],
-                                   [0, 1, 2, 0, 1, 1, 2, 0, 1, 2]],
+                           codes=[[0, 0, 0, 1, 1, 2, 2, 3, 3, 3],
+                                  [0, 1, 2, 0, 1, 1, 2, 0, 1, 2]],
                            names=['first', 'second'])
         s = Series(lrange(0, len(index)), index=index, name='sth')
         expected = ["first  second", "foo    one       0",
@@ -82,11 +80,11 @@ class TestSeriesRepr(TestData):
         repr(ots)
 
         # various names
-        for name in ['', 1, 1.2, 'foo', u('\u03B1\u03B2\u03B3'),
+        for name in ['', 1, 1.2, 'foo', '\u03B1\u03B2\u03B3',
                      'loooooooooooooooooooooooooooooooooooooooooooooooooooong',
                      ('foo', 'bar', 'baz'), (1, 2), ('foo', 1, 2.3),
-                     (u('\u03B1'), u('\u03B2'), u('\u03B3')),
-                     (u('\u03B1'), 'bar')]:
+                     ('\u03B1', '\u03B2', '\u03B3'),
+                     ('\u03B1', 'bar')]:
             self.series.name = name
             repr(self.series)
 
@@ -117,19 +115,18 @@ class TestSeriesRepr(TestData):
         assert repr(s) == 'Series([], dtype: int64)'
 
     def test_tidy_repr(self):
-        a = Series([u("\u05d0")] * 1000)
+        a = Series(["\u05d0"] * 1000)
         a.name = 'title1'
         repr(a)  # should not raise exception
 
-    @tm.capture_stderr
-    def test_repr_bool_fails(self):
+    def test_repr_bool_fails(self, capsys):
         s = Series([DataFrame(np.random.randn(2, 2)) for i in range(5)])
 
         # It works (with no Cython exception barf)!
         repr(s)
 
-        output = sys.stderr.getvalue()
-        assert output == ''
+        captured = capsys.readouterr()
+        assert captured.err == ''
 
     def test_repr_name_iterable_indexable(self):
         s = Series([1, 2, 3], name=np.int64(3))
@@ -137,7 +134,7 @@ class TestSeriesRepr(TestData):
         # it works!
         repr(s)
 
-        s.name = (u("\u05d0"), ) * 2
+        s.name = ("\u05d0", ) * 2
         repr(s)
 
     def test_repr_should_return_str(self):
@@ -147,7 +144,7 @@ class TestSeriesRepr(TestData):
         # (str on py2.x, str (unicode) on py3)
 
         data = [8, 5, 3, 5]
-        index1 = [u("\u03c3"), u("\u03c4"), u("\u03c5"), u("\u03c6")]
+        index1 = ["\u03c3", "\u03c4", "\u03c5", "\u03c6"]
         df = Series(data, index=index1)
         assert type(df.__repr__() == str)  # both py2 / 3
 
@@ -157,18 +154,12 @@ class TestSeriesRepr(TestData):
             str(Series(range(1001)))  # should not raise exception
 
     def test_unicode_string_with_unicode(self):
-        df = Series([u("\u05d0")], name=u("\u05d1"))
-        if compat.PY3:
-            str(df)
-        else:
-            compat.text_type(df)
+        df = Series(["\u05d0"], name="\u05d1")
+        str(df)
 
     def test_bytestring_with_unicode(self):
-        df = Series([u("\u05d0")], name=u("\u05d1"))
-        if compat.PY3:
-            bytes(df)
-        else:
-            str(df)
+        df = Series(["\u05d0"], name="\u05d1")
+        bytes(df)
 
     def test_timeseries_repr_object_dtype(self):
         index = Index([datetime(2000, 1, 1) + timedelta(i)
@@ -200,55 +191,51 @@ class TestSeriesRepr(TestData):
 
         assert s._repr_latex_() is None
 
+    def test_index_repr_in_frame_with_nan(self):
+        # see gh-25061
+        i = Index([1, np.nan])
+        s = Series([1, 2], index=i)
+        exp = """1.0    1\nNaN    2\ndtype: int64"""
+
+        assert repr(s) == exp
+
 
 class TestCategoricalRepr(object):
 
     def test_categorical_repr_unicode(self):
-        # GH#21002 if len(index) > 60, sys.getdefaultencoding()=='ascii',
-        # and we are working in PY2, then rendering a Categorical could raise
-        # UnicodeDecodeError by trying to decode when it shouldn't
+        # see gh-21002
 
         class County(StringMixin):
-            name = u'San Sebastián'
-            state = u'PR'
+            name = 'San Sebastián'
+            state = 'PR'
 
             def __unicode__(self):
-                return self.name + u', ' + self.state
+                return self.name + ', ' + self.state
 
-        cat = pd.Categorical([County() for n in range(61)])
+        cat = pd.Categorical([County() for _ in range(61)])
         idx = pd.Index(cat)
         ser = idx.to_series()
 
-        if compat.PY3:
-            # no reloading of sys, just check that the default (utf8) works
-            # as expected
-            repr(ser)
-            str(ser)
-
-        else:
-            # set sys.defaultencoding to ascii, then change it back after
-            # the test
-            with tm.set_defaultencoding('ascii'):
-                repr(ser)
-                str(ser)
+        repr(ser)
+        str(ser)
 
     def test_categorical_repr(self):
         a = Series(Categorical([1, 2, 3, 4]))
-        exp = u("0    1\n1    2\n2    3\n3    4\n" +
-                "dtype: category\nCategories (4, int64): [1, 2, 3, 4]")
+        exp = ("0    1\n1    2\n2    3\n3    4\n" +
+               "dtype: category\nCategories (4, int64): [1, 2, 3, 4]")
 
         assert exp == a.__unicode__()
 
         a = Series(Categorical(["a", "b"] * 25))
-        exp = u("0     a\n1     b\n" + "     ..\n" + "48    a\n49    b\n" +
-                "Length: 50, dtype: category\nCategories (2, object): [a, b]")
+        exp = ("0     a\n1     b\n" + "     ..\n" + "48    a\n49    b\n" +
+               "Length: 50, dtype: category\nCategories (2, object): [a, b]")
         with option_context("display.max_rows", 5):
             assert exp == repr(a)
 
         levs = list("abcdefghijklmnopqrstuvwxyz")
         a = Series(Categorical(["a", "b"], categories=levs, ordered=True))
-        exp = u("0    a\n1    b\n" + "dtype: category\n"
-                "Categories (26, object): [a < b < c < d ... w < x < y < z]")
+        exp = ("0    a\n1    b\n" + "dtype: category\n"
+               "Categories (26, object): [a < b < c < d ... w < x < y < z]")
         assert exp == a.__unicode__()
 
     def test_categorical_series_repr(self):
@@ -364,11 +351,11 @@ Categories (5, datetime64[ns, US/Eastern]): [2011-01-01 09:00:00-05:00 < 2011-01
     def test_categorical_series_repr_period(self):
         idx = period_range('2011-01-01 09:00', freq='H', periods=5)
         s = Series(Categorical(idx))
-        exp = """0   2011-01-01 09:00
-1   2011-01-01 10:00
-2   2011-01-01 11:00
-3   2011-01-01 12:00
-4   2011-01-01 13:00
+        exp = """0    2011-01-01 09:00
+1    2011-01-01 10:00
+2    2011-01-01 11:00
+3    2011-01-01 12:00
+4    2011-01-01 13:00
 dtype: category
 Categories (5, period[H]): [2011-01-01 09:00, 2011-01-01 10:00, 2011-01-01 11:00, 2011-01-01 12:00,
                             2011-01-01 13:00]"""  # noqa
@@ -377,11 +364,11 @@ Categories (5, period[H]): [2011-01-01 09:00, 2011-01-01 10:00, 2011-01-01 11:00
 
         idx = period_range('2011-01', freq='M', periods=5)
         s = Series(Categorical(idx))
-        exp = """0   2011-01
-1   2011-02
-2   2011-03
-3   2011-04
-4   2011-05
+        exp = """0    2011-01
+1    2011-02
+2    2011-03
+3    2011-04
+4    2011-05
 dtype: category
 Categories (5, period[M]): [2011-01, 2011-02, 2011-03, 2011-04, 2011-05]"""
 
@@ -390,11 +377,11 @@ Categories (5, period[M]): [2011-01, 2011-02, 2011-03, 2011-04, 2011-05]"""
     def test_categorical_series_repr_period_ordered(self):
         idx = period_range('2011-01-01 09:00', freq='H', periods=5)
         s = Series(Categorical(idx, ordered=True))
-        exp = """0   2011-01-01 09:00
-1   2011-01-01 10:00
-2   2011-01-01 11:00
-3   2011-01-01 12:00
-4   2011-01-01 13:00
+        exp = """0    2011-01-01 09:00
+1    2011-01-01 10:00
+2    2011-01-01 11:00
+3    2011-01-01 12:00
+4    2011-01-01 13:00
 dtype: category
 Categories (5, period[H]): [2011-01-01 09:00 < 2011-01-01 10:00 < 2011-01-01 11:00 < 2011-01-01 12:00 <
                             2011-01-01 13:00]"""  # noqa
@@ -403,11 +390,11 @@ Categories (5, period[H]): [2011-01-01 09:00 < 2011-01-01 10:00 < 2011-01-01 11:
 
         idx = period_range('2011-01', freq='M', periods=5)
         s = Series(Categorical(idx, ordered=True))
-        exp = """0   2011-01
-1   2011-02
-2   2011-03
-3   2011-04
-4   2011-05
+        exp = """0    2011-01
+1    2011-02
+2    2011-03
+3    2011-04
+4    2011-05
 dtype: category
 Categories (5, period[M]): [2011-01 < 2011-02 < 2011-03 < 2011-04 < 2011-05]"""
 
